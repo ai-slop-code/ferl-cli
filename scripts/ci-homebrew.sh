@@ -46,5 +46,8 @@ snapshot > "$WORK/after-uninstall"
 cmp "$WORK/before" "$WORK/after-uninstall"
 # Audit the actual release formula, with its immutable HTTPS download URLs.
 python3 "$ROOT/scripts/render-formula.py" "$DIST" "$FILE"
+# This disposable tap's formula was just generated from the candidate archives; trust
+# that exact content so Homebrew will load it for audit.
+brew trust --formula "$FORMULA"
 brew audit --strict "$FORMULA"
 echo "Homebrew install/upgrade/uninstall preserved profile bytes, modes, and ownership."

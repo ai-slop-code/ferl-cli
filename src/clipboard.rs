@@ -127,13 +127,17 @@ fn run_helper(helper: &Helper, bytes: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
-    fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
+    /// A test helper run through `/bin/sh`. The script is never executed directly: a
+    /// freshly written executable can fail with "text file busy" while another thread
+    /// forks a child that still holds its write descriptor.
+    fn script(dir: &Path, name: &str, body: &str) -> Helper {
         let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        path
+        std::fs::write(&path, format!("{body}\n")).expect("write");
+        Helper {
+            program: PathBuf::from("/bin/sh"),
+            args: vec![path.to_string_lossy().into_owned()],
+        }
     }
 
     #[test]
@@ -142,14 +146,7 @@ mod tests {
         let out = dir.path().join("captured");
         let helper = script(dir.path(), "spy", &format!("cat > '{}'", out.display()));
         let text = "https://s.example.com/abc?x=1;rm -rf $HOME";
-        copy_with(
-            &[Helper {
-                program: helper,
-                args: vec![],
-            }],
-            text,
-        )
-        .expect("copied");
+        copy_with(&[helper], text).expect("copied");
         assert_eq!(std::fs::read(&out).expect("captured"), text.as_bytes());
     }
 
@@ -158,17 +155,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         let bad = script(dir.path(), "bad", "exit 1");
         let good = script(dir.path(), "good", "cat > /dev/null");
-        let helpers = [
-            Helper {
-                program: bad,
-                args: vec![],
-            },
-            Helper {
-                program: good,
-                args: vec![],
-            },
-        ];
-        assert!(copy_with(&helpers, "https://s.example.com/a").is_ok());
+        assert!(copy_with(&[bad, good], "https://s.example.com/a").is_ok());
     }
 
     #[test]
@@ -187,13 +174,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         let slow = script(dir.path(), "slow", "cat > /dev/null; sleep 10");
         let started = Instant::now();
-        let result = copy_with(
-            &[Helper {
-                program: slow,
-                args: vec![],
-            }],
-            "https://s.example.com/a",
-        );
+        let result = copy_with(&[slow], "https://s.example.com/a");
         assert!(result.is_err());
         assert!(started.elapsed() < CLIPBOARD_BUDGET + Duration::from_millis(1500));
     }
