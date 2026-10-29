@@ -1038,3 +1038,24 @@ fn created_short_url_is_returned_exactly_when_the_public_origin_differs() {
     assert_eq!(server.count("POST"), 1);
     assert_eq!(server.requests()[0].path(), "/api/v1/links");
 }
+
+#[test]
+fn human_table_golden_for_default_columns_nulls_and_order() {
+    let first = link_json("golden1", Some("Team docs"), "3");
+    let second = link_json("golden2", None, "9007199254740993");
+    let server = MockServer::start(move |_| {
+        Reply::json(200, &page_json(&[first.clone(), second.clone()], None))
+    });
+    let harness = profile_for(&server);
+    let run = harness.run(&["--profile", "work", "list"]);
+    run.assert_no_secret();
+    assert_eq!(run.status, 0, "stderr: {}", run.stderr);
+    let expected = [
+        "short_url                      destination_url                    title      visit_count       created_at",
+        "https://s.example.com/golden1  https://example.com/golden1?q=1#f  Team docs  3                 2026-10-29T10:00:00Z",
+        "https://s.example.com/golden2  https://example.com/golden2?q=1#f  —          9007199254740993  2026-10-29T10:00:00Z",
+        "",
+    ]
+    .join("\n");
+    assert_eq!(run.stdout, expected);
+}
