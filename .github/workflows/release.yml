@@ -47,7 +47,12 @@ jobs:
           version=$(python3 -c 'import json; print(json.load(open("dist/release/manifest.json"))["cli_version"])')
           test "$TAG" = "v$version"
           (cd dist/release && shasum -a 256 -c SHA256SUMS)
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
+          if ! gh release view "$TAG" >/dev/null 2>"$RUNNER_TEMP/release-view.err"; then
+            if ! grep -qi 'release not found' "$RUNNER_TEMP/release-view.err"; then
+              cat "$RUNNER_TEMP/release-view.err" >&2
+              echo "Could not determine whether $TAG has a release; not creating one." >&2
+              exit 1
+            fi
             gh release create "$TAG" --verify-tag --draft --title "ferl $version" \
               --notes-file "docs/releases/$version.md" dist/release/*
           fi
