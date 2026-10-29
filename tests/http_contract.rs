@@ -1059,3 +1059,36 @@ fn human_table_golden_for_default_columns_nulls_and_order() {
     .join("\n");
     assert_eq!(run.stdout, expected);
 }
+
+#[test]
+fn stderr_golden_for_unauthorized_and_rate_limited_reads() {
+    let unauthorized = MockServer::start(|_| {
+        Reply::json(
+            401,
+            &error_json("unauthorized", "The API key is not valid.", "req-401"),
+        )
+    });
+    let harness = profile_for(&unauthorized);
+    let run = harness.run(&["--profile", "work", "list"]);
+    run.assert_no_secret();
+    assert_eq!(run.status, 4);
+    assert_eq!(
+        run.stderr,
+        "ferl: error: The API key is not valid.\n  HTTP 401, server code unauthorized, request ID req-401\n"
+    );
+    let limited = MockServer::start(|_| {
+        Reply::json(
+            429,
+            &error_json("rate_limited", "Too many requests.", "req-429"),
+        )
+        .with_header("Retry-After", "7")
+    });
+    let harness = profile_for(&limited);
+    let run = harness.run(&["--profile", "work", "list"]);
+    run.assert_no_secret();
+    assert_eq!(run.status, 8);
+    assert_eq!(
+        run.stderr,
+        "ferl: error: Too many requests.\n  HTTP 429, server code rate_limited, request ID req-429, retry after 7 second(s)\n"
+    );
+}
