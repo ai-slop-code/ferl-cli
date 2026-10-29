@@ -920,3 +920,121 @@ fn json_creation_without_copy_flag_reports_a_skipped_clipboard_and_never_copies(
         run.stderr
     );
 }
+
+#[test]
+fn list_rejections_map_to_documented_exit_codes_with_one_attempt_and_no_stdout() {
+    let cases = [
+        (400, "invalid_request", 2),
+        (403, "forbidden", 5),
+        (405, "method_not_allowed", 11),
+        (413, "payload_too_large", 2),
+        (415, "unsupported_media_type", 11),
+    ];
+    for (status, code, exit) in cases {
+        let server = MockServer::start(move |_| {
+            Reply::json(status, &error_json(code, "rejected", "req-reject"))
+        });
+        let harness = profile_for(&server);
+        let run = harness.run_json("work", &["list"]);
+        run.assert_no_secret();
+        assert_eq!(run.status, exit, "HTTP {status}: stderr {}", run.stderr);
+        assert!(run.stdout.is_empty(), "HTTP {status}: no partial output");
+        assert_eq!(
+            server.requests().len(),
+            1,
+            "HTTP {status}: a read rejection is not retried"
+        );
+        assert!(
+            run.stderr.contains(code),
+            "HTTP {status}: safe server code is shown"
+        );
+    }
+}
+
+#[test]
+fn a_changed_context_cursor_is_refused_without_restarting_page_one() {
+    let server = MockServer::start(|request| {
+        if request.query_values("cursor").is_empty() {
+            let links = synthetic_links("ctx", 2);
+            Reply::json(200, &page_json(&links, Some("ctx-two")))
+        } else {
+            Reply::json(
+                400,
+                &error_json("invalid_cursor", "cursor no longer matches", "req-ctx"),
+            )
+        }
+    });
+    let harness = profile_for(&server);
+    let run = harness.run_json("work", &["list", "--all"]);
+    run.assert_no_secret();
+    assert_eq!(
+        run.status, 12,
+        "accepted pages make a partial result: {}",
+        run.stderr
+    );
+    let value = run.json_stdout();
+    assert_eq!(value["data"]["items"].as_array().expect("items").len(), 2);
+    assert_eq!(value["meta"]["stop_reason"], "error");
+    assert_eq!(value["meta"]["complete"], false);
+    assert_eq!(
+        value["data"]["next_cursor"], "ctx-two",
+        "continuation is the refused request"
+    );
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2, "no silent restart from page one");
+    assert_eq!(requests[1].query_values("cursor"), ["ctx-two"]);
+}
+
+#[test]
+fn a_changed_context_cursor_on_the_first_page_is_a_usage_failure_with_empty_stdout() {
+    let server = MockServer::start(|_| {
+        Reply::json(
+            400,
+            &error_json("invalid_cursor", "cursor no longer matches", "req-ctx"),
+        )
+    });
+    let harness = profile_for(&server);
+    let run = harness.run_json("work", &["list", "--cursor", "stale-token"]);
+    assert_eq!(run.status, 2, "stderr: {}", run.stderr);
+    assert!(run.stdout.is_empty());
+    let requests = server.requests();
+    assert_eq!(
+        requests.len(),
+        1,
+        "the refused cursor is never replaced by page one"
+    );
+    assert_eq!(requests[0].query_values("cursor"), ["stale-token"]);
+}
+
+#[test]
+fn created_short_url_is_returned_exactly_when_the_public_origin_differs() {
+    let server = MockServer::start(|_| created_reply(CODE));
+    let harness = Harness::new();
+    let added = harness.run_with(
+        &[
+            "profile",
+            "add",
+            "work",
+            "--server",
+            &server.url(),
+            "--allow-http-loopback",
+            "--public-origin",
+            "https://short.example.test",
+            "--key-stdin",
+            "--default",
+        ],
+        Some(format!("{KEY}\n").as_bytes()),
+    );
+    assert_eq!(added.status, 0, "stderr: {}", added.stderr);
+    let run = harness.run(&[
+        "--profile",
+        "work",
+        "https://example.com/public",
+        "--no-copy",
+    ]);
+    run.assert_no_secret();
+    assert_eq!(run.status, 0, "stderr: {}", run.stderr);
+    assert_eq!(run.stdout, format!("https://s.example.com/{CODE}\n"));
+    assert_eq!(server.count("POST"), 1);
+    assert_eq!(server.requests()[0].path(), "/api/v1/links");
+}

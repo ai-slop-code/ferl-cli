@@ -251,7 +251,19 @@ pub fn set_connection(
         }
         record = updated;
     }
-    let referenced: Vec<String> = std::iter::once(record.id.clone())
+    if changes.server.is_some() {
+        // The prior identifier stays bound until the config names the new one, so an
+        // interruption between the two renames leaves the profile usable.
+        let mut bound: Vec<String> = snapshot
+            .config
+            .profiles
+            .values()
+            .map(|r| r.id.clone())
+            .collect();
+        bound.push(record.id.clone());
+        store.save_credentials(&snapshot.credentials, &bound)?;
+    }
+    let final_ids: Vec<String> = std::iter::once(record.id.clone())
         .chain(
             snapshot
                 .config
@@ -261,11 +273,11 @@ pub fn set_connection(
                 .map(|(_, r)| r.id.clone()),
         )
         .collect();
-    if changes.server.is_some() {
-        store.save_credentials(&snapshot.credentials, &referenced)?;
-    }
     next_config.profiles.insert(name.to_owned(), record);
     store.save_config(&next_config)?;
+    if changes.server.is_some() {
+        store.save_credentials(&snapshot.credentials, &final_ids)?;
+    }
     Ok(committed_view(&next_config, &snapshot.credentials, name))
 }
 
@@ -349,4 +361,179 @@ pub fn ensure_name_available(store: &Store, name: &str) -> Result<(), CliError> 
         return Err(CliError::usage(format!("Profile {name} already exists.")));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod interruption_tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+    use crate::storage::fault::{self, Stage};
+
+    const KEY_ONE: &str = "ferl_ak_v1_SYNTHETIC_ONE_0123456789abcdef";
+    const KEY_TWO: &str = "ferl_ak_v1_SYNTHETIC_TWO_0123456789abcdef";
+    const KEY_NEW: &str = "ferl_ak_v1_SYNTHETIC_NEW_0123456789abcdef";
+    const ONE: &str = "https://one.example.test";
+    const TWO: &str = "https://two.example.test";
+    const THREE: &str = "https://three.example.test";
+
+    fn key(text: &str) -> ApiKey {
+        ApiKey::from_input(text.as_bytes().to_vec()).expect("synthetic key")
+    }
+
+    fn seeded() -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("chmod");
+        let store = Store::from_config_path(dir.path().join("config.toml"));
+        for (name, server, text) in [("one", ONE, KEY_ONE), ("two", TWO, KEY_TWO)] {
+            add(
+                &store,
+                AddRequest {
+                    name: name.to_owned(),
+                    server: server.to_owned(),
+                    public_origin: None,
+                    ca_bundle: None,
+                    allow_http_loopback: false,
+                    make_default: false,
+                    key: key(text),
+                },
+            )
+            .expect("seed profile");
+        }
+        (dir, store)
+    }
+
+    type Operation = fn(&Store) -> Result<(), CliError>;
+
+    fn op_add(store: &Store) -> Result<(), CliError> {
+        add(
+            store,
+            AddRequest {
+                name: "three".to_owned(),
+                server: THREE.to_owned(),
+                public_origin: None,
+                ca_bundle: None,
+                allow_http_loopback: false,
+                make_default: false,
+                key: key(KEY_NEW),
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn op_set_key(store: &Store) -> Result<(), CliError> {
+        set_key(store, "one", &key(KEY_NEW)).map(|_| ())
+    }
+
+    fn op_server_change(store: &Store) -> Result<(), CliError> {
+        let changes = ConnectionChanges {
+            server: Some(THREE.to_owned()),
+            ..ConnectionChanges::default()
+        };
+        set_connection(store, "one", &changes, Some(&key(KEY_NEW))).map(|_| ())
+    }
+
+    fn op_remove(store: &Store) -> Result<(), CliError> {
+        remove(store, "one").map(|_| ())
+    }
+
+    /// Every profile still present must be usable, with a key that belongs to it.
+    /// The bystander profile is never touched and must keep its own key.
+    fn assert_consistent(store: &Store, label: &str) {
+        let (snapshot, _lock) = store
+            .snapshot(false)
+            .expect("store reads after interruption");
+        for (name, record) in &snapshot.config.profiles {
+            let entry = snapshot
+                .credential_for(record)
+                .unwrap_or_else(|| panic!("{label}: profile {name} lost its usable credential"));
+            let allowed: &[&str] = match name.as_str() {
+                "one" => &[KEY_ONE, KEY_NEW],
+                "two" => &[KEY_TWO],
+                "three" => &[KEY_NEW],
+                other => panic!("{label}: unexpected profile {other}"),
+            };
+            assert!(
+                allowed.contains(&entry.api_key.as_str()),
+                "{label}: profile {name} is bound to another profile's key"
+            );
+        }
+        assert!(
+            snapshot.config.profiles.contains_key("two"),
+            "{label}: bystander profile missing"
+        );
+    }
+
+    fn run_with_interruption(name: &str, operation: Operation) {
+        let mut checked = 0;
+        for stage in [Stage::BeforeRename, Stage::AfterRename] {
+            let total = {
+                let (_dir, store) = seeded();
+                fault::plan(usize::MAX, stage);
+                let _ = operation(&store);
+                let attempted = fault::writes();
+                fault::clear();
+                attempted
+            };
+            assert!(total > 0, "{name} performs at least one atomic write");
+            for index in 0..total {
+                let (_dir, store) = seeded();
+                fault::plan(index, stage);
+                let result = operation(&store);
+                fault::clear();
+                assert!(
+                    result.is_err(),
+                    "{name} write {index} {stage:?}: the injected interruption was reported"
+                );
+                assert_consistent(&store, &format!("{name} write {index} {stage:?}"));
+                checked += 1;
+            }
+        }
+        assert!(checked >= 2, "{name} was exercised at both boundaries");
+    }
+
+    #[test]
+    fn interrupted_add_leaves_existing_profiles_on_their_own_keys() {
+        run_with_interruption("add", op_add);
+    }
+
+    #[test]
+    fn interrupted_key_replacement_leaves_the_profile_usable() {
+        run_with_interruption("set-key", op_set_key);
+    }
+
+    #[test]
+    fn interrupted_server_change_never_strands_or_rebinds_the_profile() {
+        run_with_interruption("server change", op_server_change);
+    }
+
+    #[test]
+    fn interrupted_removal_leaves_other_profiles_untouched() {
+        run_with_interruption("remove", op_remove);
+    }
+
+    #[test]
+    fn stale_staging_files_are_ignored_by_readers() {
+        let (dir, store) = seeded();
+        std::fs::write(dir.path().join(".ferl-stale.tmp"), "not toml {{{").expect("write");
+        assert_consistent(&store, "stale staging file");
+    }
+
+    #[test]
+    fn successful_server_change_prunes_the_prior_credential() {
+        let (_dir, store) = seeded();
+        op_server_change(&store).expect("server change");
+        let (snapshot, _lock) = store.snapshot(false).expect("snapshot");
+        let record = snapshot.profile("one").expect("one");
+        assert_eq!(record.server_origin, THREE);
+        assert_eq!(
+            snapshot
+                .credential_for(record)
+                .expect("new credential")
+                .api_key,
+            KEY_NEW
+        );
+        assert_eq!(snapshot.credentials.credentials.len(), 2);
+    }
 }

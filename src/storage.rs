@@ -160,6 +160,8 @@ pub fn write_private_file_atomic(path: &Path, bytes: &[u8]) -> Result<(), CliErr
         .write_all(bytes)
         .and_then(|_| staged.as_file().sync_all())
         .map_err(|e| CliError::local_io(format!("Could not write {}: {e}.", path.display())))?;
+    #[cfg(test)]
+    fault::checkpoint(fault::Stage::BeforeRename)?;
     staged.persist(path).map_err(|e| {
         CliError::local_io(format!(
             "Could not replace {}: {}.",
@@ -167,7 +169,64 @@ pub fn write_private_file_atomic(path: &Path, bytes: &[u8]) -> Result<(), CliErr
             e.error
         ))
     })?;
+    #[cfg(test)]
+    fault::checkpoint(fault::Stage::AfterRename)?;
     sync_dir(dir)
+}
+
+/// Deterministic interruption points around each atomic rename. Only unit tests use
+/// them: the production build has no flag, environment variable, or fault hook.
+#[cfg(test)]
+pub(crate) mod fault {
+    use std::cell::Cell;
+
+    use crate::error::CliError;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Stage {
+        BeforeRename,
+        AfterRename,
+    }
+
+    thread_local! {
+        static PLAN: Cell<Option<(usize, Stage)>> = const { Cell::new(None) };
+        static WRITES: Cell<usize> = const { Cell::new(0) };
+        static CURRENT: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Makes the `index`-th atomic write on this thread fail at `stage`, as if the
+    /// process had stopped there. Later writes are not attempted by the caller.
+    pub fn plan(index: usize, stage: Stage) {
+        WRITES.with(|w| w.set(0));
+        PLAN.with(|p| p.set(Some((index, stage))));
+    }
+
+    pub fn clear() {
+        PLAN.with(|p| p.set(None));
+    }
+
+    /// Number of atomic writes attempted on this thread since the last `plan`.
+    pub fn writes() -> usize {
+        WRITES.with(Cell::get)
+    }
+
+    pub(super) fn checkpoint(stage: Stage) -> Result<(), CliError> {
+        if stage == Stage::BeforeRename {
+            let index = WRITES.with(|w| {
+                let index = w.get();
+                w.set(index + 1);
+                index
+            });
+            CURRENT.with(|c| c.set(index));
+        }
+        let planned = PLAN.with(Cell::get);
+        if planned == Some((CURRENT.with(Cell::get), stage)) {
+            return Err(CliError::local_io(
+                "Injected interruption at a rename boundary.",
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn sync_dir(dir: &Path) -> Result<(), CliError> {

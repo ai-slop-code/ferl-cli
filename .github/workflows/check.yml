@@ -43,6 +43,9 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Linux ]; then sudo apt-get install -y time; fi
           cargo test --release --locked --test list_resource -- --ignored --test-threads=1 --nocapture
+      - name: Desktop clipboard round trip
+        if: runner.os == 'macOS'
+        run: cargo test --locked --test clipboard_desktop -- --ignored --test-threads=1 --nocapture
       - name: Check MSRV
         if: matrix.runner == 'ubuntu-24.04'
         run: |
