@@ -2,7 +2,7 @@
 class Ferl < Formula
   desc "Shorten URLs, find your links, and delete them"
   homepage "https://github.com/ai-slop-code/ferl-cli"
-  version "<VERSION>"
+  <VERSION_LINE>
   license "MIT"
 
   depends_on macos: :ventura

@@ -21,6 +21,7 @@ base = (args.dist.resolve().as_uri() if args.local else
         f"https://github.com/ai-slop-code/ferl-cli/releases/download/v{version}")
 values = {"VERSION": args.rehearsal_version or version,
           "ARTIFACT_VERSION": version, "ARTIFACT_BASE": base}
+
 for arch, key in [("aarch64", "ARM_SHA256"), ("x86_64", "INTEL_SHA256")]:
     name = f"ferl-{version}-{arch}-apple-darwin.tar.gz"
     artifact = next(a for a in manifest["artifacts"] if a["archive"] == name)
@@ -31,5 +32,9 @@ for arch, key in [("aarch64", "ARM_SHA256"), ("x86_64", "INTEL_SHA256")]:
 text = (ROOT / "packaging/homebrew/ferl.rb.template").read_text()
 for key, value in values.items():
     text = text.replace(f"<{key}>", value)
+# Release formulae take their version from the versioned download URL, which Homebrew
+# audits as redundant if repeated; only the local rehearsal states it explicitly.
+version_line = f'  version "{values["VERSION"]}"\n' if args.rehearsal_version else ""
+text = text.replace("  <VERSION_LINE>\n", version_line)
 args.output.parent.mkdir(parents=True, exist_ok=True)
 args.output.write_text(text)
