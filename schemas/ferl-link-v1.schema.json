@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ferl CLI JSON v1: Link",
+  "description": "The exact 12-field Link representation emitted by ferl --output json (business spec section 7.2).",
+  "type": "object",
+  "required": [
+    "id",
+    "short_code",
+    "short_url",
+    "destination_url",
+    "title",
+    "tags",
+    "owner_id",
+    "enabled",
+    "active",
+    "visit_count",
+    "created_at",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "short_code": { "type": "string", "pattern": "^[a-z0-9-]{3,64}$" },
+    "short_url": { "type": "string", "pattern": "^https?://" },
+    "destination_url": { "type": "string", "pattern": "^https?://" },
+    "title": { "type": ["string", "null"] },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "owner_id": { "type": ["string", "null"], "format": "uuid" },
+    "enabled": { "type": "boolean" },
+    "active": { "type": "boolean" },
+    "visit_count": { "type": "integer", "minimum": 0, "maximum": 9223372036854775807 },
+    "created_at": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "updated_at": { "type": "string", "format": "date-time", "pattern": "Z$" }
+  }
+}

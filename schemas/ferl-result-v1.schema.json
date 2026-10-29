@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ferl CLI JSON v1: Result",
+  "description": "One stdout object per successful data-producing command with --output json (business spec section 7.2). Key order and whitespace are not contractual. Partial list results are the documented exception described in section 8 and are reported with exit code 12 plus an error record on stderr.",
+  "type": "object",
+  "required": ["schema_version", "command", "profile", "data", "meta"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "command": {
+      "enum": [
+        "create",
+        "list",
+        "delete",
+        "profile.add",
+        "profile.list",
+        "profile.show",
+        "profile.use",
+        "profile.set",
+        "profile.set-key",
+        "profile.check",
+        "profile.remove"
+      ]
+    },
+    "profile": { "type": ["string", "null"] },
+    "data": { "type": "object" },
+    "meta": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "command": { "const": "create" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["link"],
+            "additionalProperties": false,
+            "properties": { "link": { "$ref": "ferl-link-v1.schema.json" } }
+          },
+          "meta": {
+            "type": "object",
+            "required": ["request_id", "clipboard"],
+            "additionalProperties": false,
+            "properties": {
+              "request_id": { "type": ["string", "null"] },
+              "clipboard": { "enum": ["copied", "skipped", "failed"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "list" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["items", "next_cursor"],
+            "additionalProperties": false,
+            "properties": {
+              "items": { "type": "array", "items": { "$ref": "ferl-link-v1.schema.json" } },
+              "next_cursor": { "type": ["string", "null"], "minLength": 1 }
+            }
+          },
+          "meta": {
+            "type": "object",
+            "required": ["pages_fetched", "complete", "truncated", "stop_reason", "request_id"],
+            "additionalProperties": false,
+            "properties": {
+              "pages_fetched": { "type": "integer", "minimum": 0 },
+              "complete": { "type": "boolean" },
+              "truncated": { "type": "boolean" },
+              "stop_reason": {
+                "enum": ["end", "page", "page_limit", "timeout", "error", "size_limit", "cancelled"]
+              },
+              "request_id": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "delete" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["short_code", "deleted"],
+            "additionalProperties": false,
+            "properties": {
+              "short_code": { "type": "string" },
+              "deleted": { "const": true }
+            }
+          },
+          "meta": {
+            "type": "object",
+            "required": ["request_id"],
+            "additionalProperties": false,
+            "properties": { "request_id": { "type": ["string", "null"] } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "profile.check" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["account"],
+            "additionalProperties": false,
+            "properties": {
+              "account": {
+                "type": "object",
+                "required": ["id", "username", "role", "enabled", "created_at", "updated_at"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "string", "format": "uuid" },
+                  "username": { "type": "string" },
+                  "role": { "enum": ["admin", "user"] },
+                  "enabled": { "type": "boolean" },
+                  "created_at": { "type": "string" },
+                  "updated_at": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

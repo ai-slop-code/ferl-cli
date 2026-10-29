@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ferl CLI JSON v1: warning record",
+  "description": "A warning JSON Lines record on stderr in --output json mode (business spec section 7.3).",
+  "type": "object",
+  "required": ["schema_version", "type", "command", "profile", "code", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "type": { "const": "warning" },
+    "command": { "type": "string" },
+    "profile": { "type": ["string", "null"] },
+    "code": { "type": "string" },
+    "message": { "type": "string" }
+  }
+}

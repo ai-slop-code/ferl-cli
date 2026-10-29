@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ferl CLI JSON v1: error record",
+  "description": "One JSON Lines record on stderr for a failure in --output json mode (business spec section 7.3). It never contains prose.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "command",
+    "profile",
+    "exit_code",
+    "error",
+    "http_status",
+    "request_id",
+    "retry_after_seconds",
+    "mutation_outcome",
+    "partial",
+    "pages_fetched"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "type": { "const": "error" },
+    "command": { "type": "string" },
+    "profile": { "type": ["string", "null"] },
+    "exit_code": { "type": "integer", "minimum": 1, "maximum": 255 },
+    "error": {
+      "type": "object",
+      "required": ["kind", "code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "usage",
+            "configuration",
+            "authentication",
+            "authorization",
+            "not_found",
+            "conflict",
+            "rate_limit",
+            "transport",
+            "server",
+            "protocol",
+            "partial",
+            "uncertain",
+            "local_io",
+            "cancelled",
+            "internal"
+          ]
+        },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "http_status": { "type": ["integer", "null"] },
+    "request_id": { "type": ["string", "null"] },
+    "retry_after_seconds": { "type": ["integer", "null"], "minimum": 1 },
+    "mutation_outcome": { "enum": ["not_applicable", "not_sent", "rejected", "committed", "unknown"] },
+    "partial": { "type": "boolean" },
+    "pages_fetched": { "type": "integer", "minimum": 0 }
+  }
+}

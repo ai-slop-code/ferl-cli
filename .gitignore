@@ -1,0 +1,6 @@
+target/
+dist/
+
+# Local AI execution handoffs and working notes.
+/.local-agent/
+/docs/ai-*-instructions.md

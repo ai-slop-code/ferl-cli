@@ -1,0 +1,119 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup show
+      - name: Check test prerequisites
+        run: |
+          python3 --version
+          openssl version
+          openssl req -help 2>&1 | grep -- -addext
+      - name: Format, lint, and test
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Check MSRV
+        if: matrix.runner == 'ubuntu-24.04'
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          cargo +1.85.0 test --locked
+
+  package:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Zig cross compiler
+        run: |
+          curl --fail --location --retry 3 https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
+          echo "b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a  $RUNNER_TEMP/zig.tar.xz" | shasum -a 256 -c -
+          tar -xf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-aarch64-macos-0.17.0" >> "$GITHUB_PATH"
+      - name: Build and package all four targets
+        id: package
+        env:
+          FERL_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          scripts/package.sh
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          python3 scripts/render-formula.py "dist/ferl-$version" "dist/ferl-$version/ferl.rb"
+          echo "dist=dist/ferl-$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-archives
+          path: ${{ steps.package.outputs.dist }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  smoke:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-archives
+          path: dist/release
+      - name: Verify and execute packaged binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          cd dist/release
+          shasum -a 256 -c SHA256SUMS
+          version=$(python3 -c 'import json; print(json.load(open("manifest.json"))["cli_version"])')
+          tar -xzf "ferl-$version-$TARGET.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/ferl-$version-$TARGET/ferl" --version
+          "$RUNNER_TEMP/ferl-$version-$TARGET/ferl" --help
+          uname -a
+      - name: Inspect Linux static linkage
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("dist/release/manifest.json"))["cli_version"])')
+          binary="$RUNNER_TEMP/ferl-$version-$TARGET/ferl"
+          readelf -l "$binary" > "$RUNNER_TEMP/elf-program.txt"
+          readelf -d "$binary" > "$RUNNER_TEMP/elf-dynamic.txt"
+          ! grep -q INTERP "$RUNNER_TEMP/elf-program.txt"
+          ! grep -q NEEDED "$RUNNER_TEMP/elf-dynamic.txt"
+      - name: Homebrew install, upgrade, and uninstall
+        if: runner.os == 'macOS'
+        run: sh scripts/ci-homebrew.sh dist/release

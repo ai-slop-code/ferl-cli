@@ -1,0 +1,17 @@
+#!/bin/sh
+# Build-time cross C compiler for the static musl targets. Strips target flags
+# supplied by build scripts so that zig receives exactly one target.
+set -eu
+n=$#
+i=0
+while [ "$i" -lt "$n" ]; do
+  a=$1
+  shift
+  i=$((i + 1))
+  case "$a" in
+    -target|--target) shift; i=$((i + 1)) ;;
+    --target=*|-target=*) ;;
+    *) set -- "$@" "$a" ;;
+  esac
+done
+exec zig cc -target aarch64-linux-musl "$@"

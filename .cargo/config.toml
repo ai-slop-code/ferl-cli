@@ -1,0 +1,18 @@
+# Release-one client build configuration. See README.md for the
+# native and cross-target commands. Apple targets use the platform linker;
+# the static musl targets use zig as a build-time C compiler and linker.
+
+[target.x86_64-unknown-linux-musl]
+linker = "scripts/cross/zig-cc-x86_64-linux-musl"
+rustflags = ["-C", "link-self-contained=no", "-C", "target-feature=+crt-static"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "scripts/cross/zig-cc-aarch64-linux-musl"
+rustflags = ["-C", "link-self-contained=no", "-C", "target-feature=+crt-static"]
+
+[env]
+CC_x86_64_unknown_linux_musl = { value = "scripts/cross/zig-cc-x86_64-linux-musl", relative = true }
+AR_x86_64_unknown_linux_musl = { value = "scripts/cross/zig-ar", relative = true }
+CC_aarch64_unknown_linux_musl = { value = "scripts/cross/zig-cc-aarch64-linux-musl", relative = true }
+AR_aarch64_unknown_linux_musl = { value = "scripts/cross/zig-ar", relative = true }
+MACOSX_DEPLOYMENT_TARGET = { value = "13.0", force = true }
