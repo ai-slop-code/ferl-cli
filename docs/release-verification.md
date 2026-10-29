@@ -315,7 +315,7 @@ Final verified implementation revision:
 | `sh scripts/check-proxy.sh` | 1 packaged production TCP test passed with three distinguishable identities and complete existing path/method/header/cursor assertions. | `target/release-readiness/36effbe1b5e845dab684df60c98bf51e/gate-accepted-check-proxy-9c80b6d657a14f869198395df40803e8/` |
 | `sh scripts/check-release.sh` | 8 packaged Rust tests and 8 Python release-verifier controls passed. | `target/release-readiness/36effbe1b5e845dab684df60c98bf51e/gate-accepted-check-release-264f73b0e75c4acc9567e26f8aee4ca0/` |
 | `sh scripts/check-tls.sh` | 2 packaged TLS/lifecycle tests passed; the Collector decoded 10 traces, 14 metrics, and 11 logs from the intended process. | `target/release-readiness/36effbe1b5e845dab684df60c98bf51e/gate-accepted-check-tls-e08c20d1eda1423685fc1eb0eef1c25d/` |
-| `FERL_MSRV_TOOLCHAIN_DIR=/Users/S38RA/Personal/repos/ferl/target/toolchains/rust-1.94.0 sh scripts/check-msrv.sh` | Actual Rust/Cargo/Rustdoc 1.94.0 passed the locked all-target/all-feature check and production release build on `aarch64-apple-darwin`. | `target/release-readiness/36effbe1b5e845dab684df60c98bf51e/gate-accepted-check-msrv-215ef2bb5fb74668afafd49e20852d35/` |
+| `FERL_MSRV_TOOLCHAIN_DIR=<toolchain-dir> sh scripts/check-msrv.sh` | Actual Rust/Cargo/Rustdoc 1.94.0 passed the locked all-target/all-feature check and production release build on `aarch64-apple-darwin`. | `target/release-readiness/36effbe1b5e845dab684df60c98bf51e/gate-accepted-check-msrv-215ef2bb5fb74668afafd49e20852d35/` |
 
 The focused development executions are separate and are not added to those
 counts. The new referenced-schema test first failed against the old resolver
