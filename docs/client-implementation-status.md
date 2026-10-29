@@ -216,3 +216,25 @@ Completed locally on 2026-10-29:
 Hosted workflows, Homebrew lifecycle execution and public publication have not run.
 Read-only GitHub checks could not resolve either approved repository through the
 current credentials. No remote repository, release or publishing secret was created.
+
+## 11. Release v0.1.0 verification (2026-10-29)
+
+| Item | Result |
+| --- | --- |
+| Tag and source | `v0.1.0` at commit `68134c6ace76d6f18a6ffeb2ee1494aeb21f8350` (manifest `source_revision`). |
+| Release | [v0.1.0](https://github.com/ai-slop-code/ferl-cli/releases/tag/v0.1.0), published (not draft) from `Release` run `40975018640`. |
+| Candidate checks | `Check` runs for the same source: `40973742085` (all 4 test jobs, 4 smoke jobs, package job green). The release run's check reused the same workflow and also passed. |
+| Public assets | Four archives, `SHA256SUMS`, `manifest.json`, `ferl.rb`. Anonymous download bytes are identical to the run's retained artifact. `SHA256SUMS` verifies. |
+| Manifest | CLI `0.1.0`, JSON schema `1`, MIT, `signing: NOT_APPLIED`, `rustc 1.90.0`, OpenAPI and server-spec hashes match the server contract record. |
+| Native archive (arm64) | Extracted the public `aarch64-apple-darwin` archive on macOS 26.7.1 (arm64). `--version` is `ferl 0.1.0`; `--help` runs. Packaged-binary smoke against the approved local API, isolated configuration: profile add and check, create with a title, list (one match), delete by exact code, zero residual. |
+| Homebrew tap | **Pending.** The publish job updated the release, then the tap push failed with HTTP 403 (`HOMEBREW_TAP_TOKEN` lacked write access to the tap). `ai-slop-code/homebrew-tap` still contains only its bootstrap commit. Installation through the tap is not yet verified. |
+
+Gates resolved or deferred by owner decision (2026-10-29):
+
+- Unsigned Mac browser-download and Gatekeeper behavior: the owner will run the check after the tag, on a user-assisted Mac, and record the result. This moves the handoff gate from before to after the tag.
+- Linux Wayland and X11 clipboard helper smoke tests (AC16): deferred as a 0.1.0 follow-up.
+- AC18 exhaustive native and minimum-OS checks, and the additional AC02/AC03 two-account and externally rotated-key scenarios: approved non-blocking follow-ups.
+
+Open follow-up: a private CA generated with OpenSSL 1.1.1w was rejected by the rustls
+trust-anchor parser on the hosted macOS runners. The cause was not diagnosed; the
+TLS fixtures now require OpenSSL 3, matching the other runners.

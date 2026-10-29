@@ -5,8 +5,8 @@ creates short links, lists and searches your own links, deletes individual links
 manages named server/account profiles. It is a separate project from the server and
 uses only the server's HTTP API.
 
-Version `0.1.0` is being prepared for release. Local automated and live-server tests
-pass; manual profile setup and clipboard copy have also been confirmed. See the
+Version `0.1.0` is released on [GitHub Releases](https://github.com/ai-slop-code/ferl-cli/releases/tag/v0.1.0)
+for macOS and Linux on ARM64 and x86_64. See the
 [verification record](docs/client-implementation-status.md) for tested platforms
 and remaining work.
 
@@ -31,15 +31,17 @@ The full command reference, output contracts, exit codes, and examples are in
 
 ## Installation
 
-For now, build from source as above. The release will provide downloadable binaries
-for macOS and Linux on ARM64 and x86_64 through
-[GitHub Releases](https://github.com/ai-slop-code/ferl-cli/releases).
-
-Once the first release and tap are published, Mac installation will be:
+Download the archive for your OS and CPU from the
+[v0.1.0 release](https://github.com/ai-slop-code/ferl-cli/releases/tag/v0.1.0), verify
+it against `SHA256SUMS`, extract it, and put `ferl` on your `PATH`:
 
 ```sh
-brew install ai-slop-code/tap/ferl
+shasum -a 256 -c SHA256SUMS
+tar -xzf ferl-0.1.0-aarch64-apple-darwin.tar.gz
 ```
+
+Homebrew installation (`brew install ai-slop-code/tap/ferl`) is pending verification of
+the tap update for this release.
 
 Binary users need no Rust installation. Mac builds target macOS 13+; Linux builds
 are static musl executables targeting kernel 4.18+. Minimum-OS testing is still
