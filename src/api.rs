@@ -419,8 +419,6 @@ pub struct LinkPage {
     pub items: Vec<Link>,
     pub next_cursor: Option<String>,
     pub request_id: Option<String>,
-    /// Bytes of the accepted JSON body, used for the aggregate size bound.
-    pub body_bytes: usize,
 }
 
 pub fn list_links_page(transport: &Transport, query: &ListQuery) -> Result<LinkPage, CliError> {
@@ -453,7 +451,6 @@ pub fn list_links_page(transport: &Transport, query: &ListQuery) -> Result<LinkP
             "The page body could not be read.",
         ));
     }
-    let body_bytes = response.body.len();
     let request_id = request_id_of(&response);
     let value = parse_json_body(&response)?;
     let object = value
@@ -483,7 +480,6 @@ pub fn list_links_page(transport: &Transport, query: &ListQuery) -> Result<LinkP
         items,
         next_cursor,
         request_id,
-        body_bytes,
     })
 }
 

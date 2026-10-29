@@ -77,8 +77,11 @@ code = os.waitstatus_to_exitcode(status)
 print(json.dumps({"ok": ok, "exit": code, "transcript": transcript.decode("utf-8", "replace")}))
 "#;
 
-fn python_available() -> bool {
-    Command::new("python3").arg("--version").output().is_ok()
+fn require_python() {
+    assert!(
+        Command::new("python3").arg("--version").output().is_ok(),
+        "python3 is required for the PTY driver"
+    );
 }
 
 fn drive(harness: &Harness, scenario: &str, url: &str) -> (bool, i64, String) {
@@ -110,10 +113,7 @@ fn drive(harness: &Harness, scenario: &str, url: &str) -> (bool, i64, String) {
 
 #[test]
 fn wizard_adds_a_profile_with_hidden_key_entry_and_saves_it() {
-    if !python_available() {
-        eprintln!("skipping wizard PTY test: python3 is unavailable");
-        return;
-    }
+    require_python();
     let server = MockServer::start(|_| Reply::json(200, &account_json("ferl_cli_admin", "admin")));
     let harness = Harness::new();
     let (ok, exit, transcript) = drive(&harness, "add", &server.url());
@@ -142,10 +142,7 @@ fn wizard_adds_a_profile_with_hidden_key_entry_and_saves_it() {
 
 #[test]
 fn wizard_menu_inspects_profiles_and_exits_cleanly_without_changes() {
-    if !python_available() {
-        eprintln!("skipping wizard menu PTY test: python3 is unavailable");
-        return;
-    }
+    require_python();
     let server = MockServer::start(|_| Reply::json(200, &account_json("ferl_cli_admin", "admin")));
     let harness = Harness::new();
     let added = harness.add_profile("pty-work", &server.url(), KEY);

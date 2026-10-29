@@ -5,7 +5,6 @@ class Ferl < Formula
   version "<VERSION>"
   license "MIT"
 
-  depends_on :macos
   depends_on macos: :ventura
 
   on_macos do

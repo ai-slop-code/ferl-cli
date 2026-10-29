@@ -23,16 +23,26 @@ jobs:
           persist-credentials: false
       - name: Install pinned Rust toolchain
         run: rustup show
+      - name: Install OpenSSL 3 for test certificate generation
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
       - name: Check test prerequisites
         run: |
           python3 --version
           openssl version
+          openssl version | grep -Eq '^OpenSSL [3-9]\.'
           openssl req -help 2>&1 | grep -- -addext
       - name: Format, lint, and test
         run: |
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
+      - name: Measure list memory and staging bounds
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then sudo apt-get install -y time; fi
+          cargo test --release --locked --test list_resource -- --ignored --test-threads=1 --nocapture
       - name: Check MSRV
         if: matrix.runner == 'ubuntu-24.04'
         run: |

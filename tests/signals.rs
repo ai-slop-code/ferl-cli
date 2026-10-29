@@ -15,11 +15,20 @@ fn interrupt(child_id: u32) {
         .status();
 }
 
+fn staging_entries(harness: &Harness) -> Vec<String> {
+    std::fs::read_dir(harness.dir.path())
+        .expect("read harness dir")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("ferl-spool-"))
+        .collect()
+}
+
 fn spawn_with_config(harness: &Harness, args: &[&str]) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_ferl"))
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("HOME", harness.dir.path().join("home"))
+        .env("TMPDIR", harness.dir.path())
         .arg("--config")
         .arg(&harness.config)
         .arg("--non-interactive")
@@ -55,8 +64,17 @@ fn interrupt_during_a_later_page_emits_valid_partial_output_and_exits_130() {
     while server.requests().len() < 2 && started.elapsed() < Duration::from_secs(10) {
         std::thread::sleep(Duration::from_millis(20));
     }
+    assert_eq!(
+        staging_entries(&harness).len(),
+        1,
+        "page one is staged while paging"
+    );
     interrupt(id);
     let output = child.wait_with_output().expect("wait");
+    assert!(
+        staging_entries(&harness).is_empty(),
+        "staging removed after SIGINT"
+    );
     assert_eq!(
         output.status.code(),
         Some(130),

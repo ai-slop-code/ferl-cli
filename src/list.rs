@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 
 use serde::Serialize;
 
@@ -42,37 +43,57 @@ impl StopReason {
     }
 }
 
-/// Accepted items written as one JSON object per line in a private spool file.
+/// Accepted items written as one JSON object per line in a staging file inside a
+/// private (0700) temporary directory. Both are removed when the spool is dropped.
 pub struct Spool {
     file: tempfile::NamedTempFile,
+    _dir: tempfile::TempDir,
     pub items: usize,
+    /// Encoded payload bytes staged so far; this is the aggregate bound's measure.
+    pub bytes: u64,
 }
 
 impl Spool {
     pub fn new() -> Result<Spool, CliError> {
-        let file = tempfile::Builder::new()
+        let staging_error = |e: std::io::Error| {
+            CliError::local_io(format!("Could not create the list staging file: {e}."))
+        };
+        let dir = tempfile::Builder::new()
             .prefix("ferl-spool-")
-            .tempfile()
-            .map_err(|e| {
-                CliError::local_io(format!("Could not create the list staging file: {e}."))
-            })?;
-        Ok(Spool { file, items: 0 })
+            .tempdir()
+            .map_err(staging_error)?;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+            .map_err(staging_error)?;
+        let file = tempfile::Builder::new()
+            .prefix("staged-")
+            .tempfile_in(dir.path())
+            .map_err(staging_error)?;
+        Ok(Spool {
+            file,
+            _dir: dir,
+            items: 0,
+            bytes: 0,
+        })
     }
 
-    fn append(&mut self, links: &[Link]) -> Result<(), CliError> {
-        let mut writer = std::io::BufWriter::new(self.file.as_file_mut());
+    /// Encodes one page as JSON lines before any bound is applied to it.
+    fn encode(links: &[Link]) -> Result<Vec<u8>, CliError> {
+        let mut lines = Vec::new();
         for link in links {
-            let line =
-                serde_json::to_string(link).map_err(|e| CliError::internal(e.to_string()))?;
-            writer
-                .write_all(line.as_bytes())
-                .and_then(|_| writer.write_all(b"\n"))
-                .map_err(|e| CliError::local_io(format!("Could not stage list results: {e}.")))?;
+            serde_json::to_writer(&mut lines, link)
+                .map_err(|e| CliError::internal(e.to_string()))?;
+            lines.push(b'\n');
         }
-        writer
-            .flush()
+        Ok(lines)
+    }
+
+    fn append(&mut self, lines: &[u8], items: usize) -> Result<(), CliError> {
+        self.file
+            .write_all(lines)
+            .and_then(|_| self.file.flush())
             .map_err(|e| CliError::local_io(format!("Could not stage list results: {e}.")))?;
-        self.items += links.len();
+        self.items += items;
+        self.bytes += lines.len() as u64;
         Ok(())
     }
 
@@ -151,7 +172,6 @@ pub fn run(transport: &Transport, request: &ListRequest) -> Result<ListOutcome, 
         seen.insert(start.clone());
     }
     let mut pages: u64 = 0;
-    let mut bytes: usize = 0;
     let mut request_id: Option<String> = None;
     let mut next_cursor: Option<String> = None;
 
@@ -181,7 +201,11 @@ pub fn run(transport: &Transport, request: &ListRequest) -> Result<ListOutcome, 
             }
         };
 
-        if request.fetch_all && bytes + page.body_bytes > MAX_AGGREGATE_BYTES && pages > 0 {
+        let encoded = Spool::encode(&page.items)?;
+        if request.fetch_all
+            && spool.bytes + encoded.len() as u64 > MAX_AGGREGATE_BYTES as u64
+            && pages > 0
+        {
             // The excluded page is not accepted; the continuation is the cursor that requested it.
             let error = CliError::new(
                 Kind::Partial,
@@ -198,8 +222,7 @@ pub fn run(transport: &Transport, request: &ListRequest) -> Result<ListOutcome, 
             );
         }
 
-        spool.append(&page.items)?;
-        bytes += page.body_bytes;
+        spool.append(&encoded, page.items.len())?;
         pages += 1;
         request_id = page.request_id.clone();
         next_cursor = page.next_cursor.clone();
@@ -374,8 +397,10 @@ mod tests {
             }))
             .expect("link")
         };
-        spool.append(&[link("aaa"), link("bbb")]).expect("append");
-        spool.append(&[link("ccc")]).expect("append");
+        for batch in [vec![link("aaa"), link("bbb")], vec![link("ccc")]] {
+            let encoded = Spool::encode(&batch).expect("encode");
+            spool.append(&encoded, batch.len()).expect("append");
+        }
         let mut codes = Vec::new();
         spool
             .for_each(|l| {
@@ -385,5 +410,26 @@ mod tests {
             .expect("read");
         assert_eq!(codes, ["aaa", "bbb", "ccc"]);
         assert_eq!(spool.items, 3);
+        assert_eq!(
+            spool.bytes as usize,
+            Spool::encode(&[link("aaa"), link("bbb"), link("ccc")])
+                .expect("encode")
+                .len()
+        );
+    }
+
+    #[test]
+    fn spool_staging_is_private_and_removed_on_drop() {
+        use std::os::unix::fs::PermissionsExt;
+        let spool = Spool::new().expect("spool");
+        let dir = spool.file.path().parent().expect("parent").to_path_buf();
+        let mode =
+            |p: &std::path::Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(spool.file.path()), 0o600);
+        let file = spool.file.path().to_path_buf();
+        drop(spool);
+        assert!(!file.exists());
+        assert!(!dir.exists());
     }
 }

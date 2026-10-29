@@ -188,9 +188,27 @@ fn served_requests(stub: &Stub) -> usize {
         .unwrap_or(0)
 }
 
-fn tools_available() -> bool {
-    Command::new("python3").arg("--version").output().is_ok()
-        && Command::new("openssl").arg("version").output().is_ok()
+/// The TLS suites need python3 and an OpenSSL 3 command for their generated PKI. A
+/// missing tool is a failed prerequisite, never a silent pass.
+fn require_tools() {
+    assert!(
+        Command::new("python3").arg("--version").output().is_ok(),
+        "python3 is required for the TLS stub"
+    );
+    let version = Command::new("openssl")
+        .arg("version")
+        .output()
+        .expect("openssl is required to generate the test PKI");
+    let text = String::from_utf8_lossy(&version.stdout).into_owned();
+    let major: u32 = text
+        .strip_prefix("OpenSSL ")
+        .and_then(|rest| rest.split('.').next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0);
+    assert!(
+        major >= 3,
+        "the test PKI needs OpenSSL 3 or newer, found: {text}"
+    );
 }
 
 /// CONNECT proxy that records each tunnel request and pipes bytes to its target.
@@ -240,10 +258,6 @@ fn connect_proxy(count: Arc<Mutex<usize>>) -> u16 {
     port
 }
 
-fn skip_message(test: &str) {
-    eprintln!("skipping {test}: python3 or openssl is unavailable");
-}
-
 fn https_profile(harness: &Harness, name: &str, origin: &str, ca: Option<&Path>) -> common::Run {
     let mut args = vec![
         "profile",
@@ -265,15 +279,9 @@ fn https_profile(harness: &Harness, name: &str, origin: &str, ca: Option<&Path>)
 
 #[test]
 fn https_certificate_and_hostname_verification_with_explicit_private_ca() {
-    if !tools_available() {
-        skip_message("https_certificate_and_hostname_verification_with_explicit_private_ca");
-        return;
-    }
+    require_tools();
     let harness = Harness::new();
-    let Some(pki) = make_pki(harness.dir.path()) else {
-        skip_message("https certificate generation");
-        return;
-    };
+    let pki = make_pki(harness.dir.path()).expect("https certificate generation");
     let stub = start_stub(harness.dir.path(), &pki.cert, &pki.key).expect("stub");
     let origin = format!("https://127.0.0.1:{}", stub.port);
 
@@ -305,15 +313,9 @@ fn https_certificate_and_hostname_verification_with_explicit_private_ca() {
 
 #[test]
 fn private_ca_profile_succeeds_and_reads_the_account_over_tls() {
-    if !tools_available() {
-        skip_message("private_ca_profile_succeeds_and_reads_the_account_over_tls");
-        return;
-    }
+    require_tools();
     let harness = Harness::new();
-    let Some(pki) = make_pki(harness.dir.path()) else {
-        skip_message("https certificate generation");
-        return;
-    };
+    let pki = make_pki(harness.dir.path()).expect("https certificate generation");
     let stub = start_stub(harness.dir.path(), &pki.cert, &pki.key).expect("stub");
     let origin = format!("https://127.0.0.1:{}", stub.port);
     assert_eq!(
@@ -332,15 +334,9 @@ fn private_ca_profile_succeeds_and_reads_the_account_over_tls() {
 
 #[test]
 fn hostname_mismatch_fails_verification_even_when_the_chain_is_trusted() {
-    if !tools_available() {
-        skip_message("hostname_mismatch_fails_verification_even_when_the_chain_is_trusted");
-        return;
-    }
+    require_tools();
     let harness = Harness::new();
-    let Some(pki) = make_pki(harness.dir.path()) else {
-        skip_message("https certificate generation");
-        return;
-    };
+    let pki = make_pki(harness.dir.path()).expect("https certificate generation");
     let stub = start_stub(harness.dir.path(), &pki.wrong_cert, &pki.wrong_key).expect("stub");
     let origin = format!("https://127.0.0.1:{}", stub.port);
     assert_eq!(
@@ -354,15 +350,9 @@ fn hostname_mismatch_fails_verification_even_when_the_chain_is_trusted() {
 
 #[test]
 fn https_requests_use_a_connect_proxy_and_no_proxy_bypasses_it() {
-    if !tools_available() {
-        skip_message("https_requests_use_a_connect_proxy_and_no_proxy_bypasses_it");
-        return;
-    }
+    require_tools();
     let harness = Harness::new();
-    let Some(pki) = make_pki(harness.dir.path()) else {
-        skip_message("https certificate generation");
-        return;
-    };
+    let pki = make_pki(harness.dir.path()).expect("https certificate generation");
     let stub = start_stub(harness.dir.path(), &pki.cert, &pki.key).expect("stub");
     let origin = format!("https://127.0.0.1:{}", stub.port);
     assert_eq!(
