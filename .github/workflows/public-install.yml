@@ -1,0 +1,51 @@
+name: Public install
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Install from the public tap and verify the executable
+        env:
+          FERL_CONFIG: ${{ runner.temp }}/public-install/config.toml
+          FERL_TEST_KEY: ferl-ci-synthetic-key
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/public-install" && chmod 700 "$RUNNER_TEMP/public-install"
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew install ai-slop-code/tap/ferl
+          prefix=$(brew --prefix ferl)
+          test "$(ferl --version)" = "ferl 0.1.0"
+          ferl --help | grep -q Usage
+          expected=$(uname -m)
+          case "$expected" in
+            arm64) arch=arm64 ;;
+            x86_64) arch=x86_64 ;;
+            *) echo "unexpected architecture $expected" >&2; exit 1 ;;
+          esac
+          file -L "$prefix/bin/ferl" | grep -q "$arch"
+          ferl --config "$FERL_CONFIG" --non-interactive profile add public --server https://example.invalid --key-env FERL_TEST_KEY --default
+          snapshot() {
+            python3 - "$FERL_CONFIG" <<'PY'
+          import hashlib, os, sys
+          for path in [sys.argv[1], sys.argv[1] + '.credentials.toml']:
+              stat = os.stat(path)
+              print(oct(stat.st_mode), stat.st_uid, hashlib.sha256(open(path, 'rb').read()).hexdigest())
+          PY
+          }
+          snapshot > "$RUNNER_TEMP/public-install/before"
+          brew test ai-slop-code/tap/ferl
+          brew uninstall ferl
+          snapshot > "$RUNNER_TEMP/public-install/after"
+          cmp "$RUNNER_TEMP/public-install/before" "$RUNNER_TEMP/public-install/after"
+          echo "Public install verified on $expected; profile files unchanged after uninstall."
