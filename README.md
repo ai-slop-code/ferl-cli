@@ -31,7 +31,13 @@ The full command reference, output contracts, exit codes, and examples are in
 
 ## Installation
 
-Download the archive for your OS and CPU from the
+On macOS, install with Homebrew:
+
+```sh
+brew install ai-slop-code/tap/ferl
+```
+
+Or download the archive for your OS and CPU from the
 [v0.1.0 release](https://github.com/ai-slop-code/ferl-cli/releases/tag/v0.1.0), verify
 it against `SHA256SUMS`, extract it, and put `ferl` on your `PATH`:
 
@@ -39,9 +45,6 @@ it against `SHA256SUMS`, extract it, and put `ferl` on your `PATH`:
 shasum -a 256 -c SHA256SUMS
 tar -xzf ferl-0.1.0-aarch64-apple-darwin.tar.gz
 ```
-
-Homebrew installation (`brew install ai-slop-code/tap/ferl`) is pending verification of
-the tap update for this release.
 
 Binary users need no Rust installation. Mac builds target macOS 13+; Linux builds
 are static musl executables targeting kernel 4.18+. Minimum-OS testing is still

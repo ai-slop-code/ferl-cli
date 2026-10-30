@@ -4,8 +4,9 @@ Status date: 2026-10-29. This record tracks the local release-one client impleme
 against the [client business specification](../spec/cli-business-spec.md) and the
 [implementation plan](cli-implementation-plan.md). It separates verified behaviour from
 behaviour that awaits a named environment check, and from remaining release
-prerequisites. Nothing here claims publication, native four-target acceptance, or
-Homebrew lifecycle completion.
+prerequisites. Version 0.1.0 is published (§11). Minimum-OS floors, Linux desktop
+clipboard helpers, and the Mac browser-download check remain follow-ups as described
+in §11; sections before §10 record the pre-release state.
 
 ## 1. Baseline (M0 / PR02 checkpoint)
 
@@ -227,13 +228,19 @@ current credentials. No remote repository, release or publishing secret was crea
 | Public assets | Four archives, `SHA256SUMS`, `manifest.json`, `ferl.rb`. Anonymous download bytes are identical to the run's retained artifact. `SHA256SUMS` verifies. |
 | Manifest | CLI `0.1.0`, JSON schema `1`, MIT, `signing: NOT_APPLIED`, `rustc 1.90.0`, OpenAPI and server-spec hashes match the server contract record. |
 | Native archive (arm64) | Extracted the public `aarch64-apple-darwin` archive on macOS 26.7.1 (arm64). `--version` is `ferl 0.1.0`; `--help` runs. Packaged-binary smoke against the approved local API, isolated configuration: profile add and check, create with a title, list (one match), delete by exact code, zero residual. |
-| Homebrew tap | **Pending.** The publish job updated the release, then the tap push failed with HTTP 403 (`HOMEBREW_TAP_TOKEN` lacked write access to the tap). `ai-slop-code/homebrew-tap` still contains only its bootstrap commit. Installation through the tap is not yet verified. |
+| Homebrew tap | Verified. The first publish attempt updated the release, then the tap push failed (HTTP 403) because `HOMEBREW_TAP_TOKEN` lacked write access to the tap. After the owner replaced the token with an organization token, rerunning only the failed publish job (`40975018640`) verified the published bytes and pushed `ai-slop-code/homebrew-tap` commit `fc5d6e6` (`github-actions[bot]`, `ferl v0.1.0`). `Formula/ferl.rb` is byte-identical to the release asset. |
 
 Gates resolved or deferred by owner decision (2026-10-29):
 
 - Unsigned Mac browser-download and Gatekeeper behavior: the owner will run the check after the tag, on a user-assisted Mac, and record the result. This moves the handoff gate from before to after the tag.
 - Linux Wayland and X11 clipboard helper smoke tests (AC16): deferred as a 0.1.0 follow-up.
 - AC18 exhaustive native and minimum-OS checks, and the additional AC02/AC03 two-account and externally rotated-key scenarios: approved non-blocking follow-ups.
+
+Public installation (`public-install` workflow, manual run `40977320727`, hosted runners):
+`brew install ai-slop-code/tap/ferl` on `macos-15` (arm64) and `macos-15-intel` (x86_64)
+installed `ferl 0.1.0`, the expected architecture, passed `brew test`, and uninstalled; a
+synthetic profile's config and credential files were byte-identical, with the same modes
+and owners, after uninstall. No account or network business operation ran at install time.
 
 Open follow-up: a private CA generated with OpenSSL 1.1.1w was rejected by the rustls
 trust-anchor parser on the hosted macOS runners. The cause was not diagnosed; the
